@@ -1,5 +1,7 @@
 import json
+import time
 from typing import List
+from openai import RateLimitError
 
 from unstructured.partition.pdf import partition_pdf
 from unstructured.chunking.title import chunk_by_title
@@ -83,10 +85,10 @@ def separate_chunk_by_type(chunk):
                 content_data['tables'].append(table_html)
             
             # Handle images
-            # elif element_type == 'Image':
-            #     if hasattr(element, 'metadata') and hasattr(element.metadata, 'image_base64'):
-            #         content_data['types'].append('image')
-            #         content_data['images'].append(element.metadata.image_base64)
+            elif element_type == 'Image':
+                if hasattr(element, 'metadata') and hasattr(element.metadata, 'image_base64'):
+                    content_data['types'].append('image')
+                    content_data['images'].append(element.metadata.image_base64)
     
     content_data['types'] = list(set(content_data['types']))
     return content_data
@@ -137,8 +139,11 @@ def create_ai_enhanced_summary(text, tables, images):
         
         # Send to AI and get response
         message = HumanMessage(content=message_content)
-        response = llm.invoke([message])
-        
+        try: 
+            response = llm.invoke([message])
+        except RateLimitError:
+            time.sleep(60)
+            response = llm.invoke([message])
         return response.content
         
     except Exception as e:
@@ -228,7 +233,11 @@ ANSWER:"""
         
         # Send to AI and get response
         message = HumanMessage(content=message_content)
-        response = llm.invoke([message])
+        try:
+            response = llm.invoke([message])
+        except RateLimitError:
+            time.sleep(60)
+            response = llm.invoke([message])
         return response.content
     except Exception as e:
         print(f"Answer generation failed: {e}")
