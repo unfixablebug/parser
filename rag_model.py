@@ -174,12 +174,6 @@ def run_complete_ingestion_pipeline(report):
     db = create_vector_store(summarised_chunks, persist_directory="dbv2/chroma_db")
     
     return db
-def rag_model(report):
-    db = run_complete_ingestion_pipeline(report)
-    number = 2
-    for i in range(number):
-        query = input("Enter your query")
-        print(query_and_answer_generation(db, query))
 def query_and_answer_generation(db, query):
     retriever = db.as_retriever(search_kwargs={"k": 3})
     chunks = retriever.invoke(query)    
@@ -239,3 +233,10 @@ ANSWER:"""
     except Exception as e:
         print(f"Answer generation failed: {e}")
         return "Sorry, I encountered an error while generating the answer."
+def rag_model(report):
+    db = run_complete_ingestion_pipeline(report)
+    with open('./prompts.txt', 'r') as file:    
+        for line in file:
+            if line.strip():
+                print(query_and_answer_generation(db, line.strip()))
+rag_model("./inputs/report0.pdf")
