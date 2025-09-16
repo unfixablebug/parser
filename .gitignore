@@ -1,4 +1,4 @@
 extraction.py
 .venv/
 .env
-data_extraction.py
+data_extraction.py"venv/" 
