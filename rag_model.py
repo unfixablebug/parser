@@ -1,11 +1,9 @@
 import json
 from typing import List
 
-# Unstructured for document parsing
 from unstructured.partition.pdf import partition_pdf
 from unstructured.chunking.title import chunk_by_title
 
-# LangChain components
 from langchain_core.documents import Document
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_chroma import Chroma
@@ -14,82 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def process_text_and_tables(chunks):
-    from langchain_core.prompts import ChatPromptTemplate
-    from langchain_core.output_parsers import StrOutputParser
-    from langchain_groq import ChatGroq
-
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    texts = [chunk for chunk in chunks if chunk.category != "Table" and chunk.text and chunk.text.strip()]
-    temp_tables = [chunk for chunk in chunks if chunk.category == 'Table' ]
-    tables = [table.metadata.text_as_html for table in temp_tables if hasattr(table.metadata, 'text_as_html') and table.metadata.text_as_html]
-
-    prompt_text = """
-You are an assistant tasked with summarizing tables and text.
-Give a concise summary of the table or text.
-
-Respond only with the summary, no additionnal comment.
-Do not start your message by saying "Here is a summary" or anything like that.
-Just give the summary as it is.
-
-Table or text chunk: {element}
-
-"""
-    prompt = ChatPromptTemplate.from_template(prompt_text)
-
-    # Summary chain
-    model = ChatGroq(temperature=0.5, model="llama-3.1-8b-instant")
-    summarize_chain = {"element": lambda x: x} | prompt | model | StrOutputParser()
-    # Summarize text
-    text_summaries = summarize_chain.batch(texts, {"max_concurrency": 3})
-
-    # Summarize tables
-    tables_html = [table.metadata.text_as_html for table in tables]
-    table_summaries = summarize_chain.batch(tables_html, {"max_concurrency": 3})
-    return text_summaries, table_summaries
-
-def process_images(chunks):
-    import base64
-    import os
-    from dotenv import load_dotenv
-    load_dotenv()
-
-    # images = []
-    # for chunk in chunks:
-    #     if "CompositeElement" in str(type(chunk)):
-    #         chunk_els = chunk.metadata.orig_elements
-    #         for el in chunk_els:
-    #             if "Image" in str(type(el)):
-    #                 images.append(el.metadata.image_base64)
-    images = [chunk for chunk in chunks if chunk.category == 'Image']
-    from langchain_openai import ChatOpenAI
-    from langchain_core.prompts import ChatPromptTemplate
-    from langchain_core.output_parsers import StrOutputParser
-
-    prompt_template = """Describe the image in detail. For context,
-                    the image is part of a research paper explaining the transformers
-                    architecture. Be specific about graphs, such as bar plots."""
-    messages = [
-        (
-            "user",
-            [
-                {"type": "text", "text": prompt_template},
-                {
-                    "type": "image_url",
-                    "image_url": {"url": "data:image/jpeg;base64,{image}"},
-                },
-            ],
-        )
-    ]
-    prompt = ChatPromptTemplate.from_messages(messages)
-    chain = prompt | ChatOpenAI(model="gpt-4o-mini") | StrOutputParser()
-    image_summaries = chain.batch(images)
-    return image_summaries
-
-
-def create_partitions(report = "./inputs/report0.pdf"):
+def create_partitions(report):
     from unstructured.partition.pdf import partition_pdf
     from unstructured.chunking.title import chunk_by_title
 
@@ -144,8 +67,6 @@ def create_summaries(chunks):
         langchain_documents.append(doc)
     
     return langchain_documents
-
-
 def separate_chunk_by_type(chunk):
     content_data = {
         'text': chunk.text,
@@ -162,19 +83,18 @@ def separate_chunk_by_type(chunk):
                 content_data['tables'].append(table_html)
             
             # Handle images
-            elif element_type == 'Image':
-                if hasattr(element, 'metadata') and hasattr(element.metadata, 'image_base64'):
-                    content_data['types'].append('image')
-                    content_data['images'].append(element.metadata.image_base64)
+            # elif element_type == 'Image':
+            #     if hasattr(element, 'metadata') and hasattr(element.metadata, 'image_base64'):
+            #         content_data['types'].append('image')
+            #         content_data['images'].append(element.metadata.image_base64)
     
     content_data['types'] = list(set(content_data['types']))
     return content_data
-
 def create_ai_enhanced_summary(text, tables, images):
     
     try:
         # Initialize LLM (needs vision model for images)
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         
         # Build the text prompt
         prompt_text = f"""You are creating a searchable description for document content retrieval.
@@ -240,11 +160,9 @@ def create_vector_store(documents, persist_directory="dbv1/chroma_db"):
         collection_metadata={"hnsw:space": "cosine"}
     )  
     return vectorstore
-
-
-def run_complete_ingestion_pipeline(pdf_path: str):
+def run_complete_ingestion_pipeline(report):
     # Step 1: Partition
-    elements = create_partitions(pdf_path)
+    elements = create_partitions(report)
     
     # Step 2: Chunk
     chunks = create_chunks(elements)
@@ -255,16 +173,19 @@ def run_complete_ingestion_pipeline(pdf_path: str):
     # Step 4: Vector Store
     db = create_vector_store(summarised_chunks, persist_directory="dbv2/chroma_db")
     
-    print("🎉 Pipeline completed successfully!")
     return db
-# images = process_images(chunks)
-def query_and_answer_generation(report, query):
+def rag_model(report):
     db = run_complete_ingestion_pipeline(report)
+    number = 2
+    for i in range(number):
+        query = input("Enter your query")
+        print(query_and_answer_generation(db, query))
+def query_and_answer_generation(db, query):
     retriever = db.as_retriever(search_kwargs={"k": 3})
     chunks = retriever.invoke(query)    
     try:
         # Initialize LLM (needs vision model for images)
-        llm = ChatOpenAI(model="gpt-4o", temperature=0)
+        llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         
         # Build the text prompt
         prompt_text = f"""Based on the following documents, please answer this question: {query}
@@ -296,7 +217,6 @@ CONTENT TO ANALYZE:
 Please provide a clear, comprehensive answer using the text, tables, and images above. If the documents don't contain sufficient information to answer the question, say "I don't have enough information to answer that question based on the provided documents."
 
 ANSWER:"""
-
         # Build message content starting with text
         message_content = [{"type": "text", "text": prompt_text}]
         
@@ -315,61 +235,7 @@ ANSWER:"""
         # Send to AI and get response
         message = HumanMessage(content=message_content)
         response = llm.invoke([message])
-        
         return response.content
-        
     except Exception as e:
-        print(f"❌ Answer generation failed: {e}")
+        print(f"Answer generation failed: {e}")
         return "Sorry, I encountered an error while generating the answer."
-
-text_summaries, table_summaries = process_text_and_tables(chunks)
-
-
-import uuid
-from langchain.vectorstores import Chroma
-from langchain.storage import InMemoryStore
-from langchain.schema.document import Document
-from langchain.embeddings import OpenAIEmbeddings
-from langchain.retrievers.multi_vector import MultiVectorRetriever
-
-# The vectorstore to use to index the child chunks
-vectorstore = Chroma(collection_name="multi_modal_rag", embedding_function=OpenAIEmbeddings())
-
-# The storage layer for the parent documents
-store = InMemoryStore()
-id_key = "doc_id"
-
-# The retriever (empty to start)
-retriever = MultiVectorRetriever(
-    vectorstore=vectorstore,
-    docstore=store,
-    id_key=id_key,
-)
-
-# Add texts
-doc_ids = [str(uuid.uuid4()) for _ in texts]
-summary_texts = [
-    Document(page_content=summary, metadata={id_key: doc_ids[i]}) for i, summary in enumerate(text_summaries)
-]
-retriever.vectorstore.add_documents(summary_texts)
-retriever.docstore.mset(list(zip(doc_ids, texts)))
-
-# Add tables
-table_ids = [str(uuid.uuid4()) for _ in tables]
-summary_tables = [
-    Document(page_content=summary, metadata={id_key: table_ids[i]}) for i, summary in enumerate(table_summaries)
-]
-retriever.vectorstore.add_documents(summary_tables)
-retriever.docstore.mset(list(zip(table_ids, tables)))
-
-# # Add image summaries
-# img_ids = [str(uuid.uuid4()) for _ in images]
-# summary_img = [
-#     Document(page_content=summary, metadata={id_key: img_ids[i]}) for i, summary in enumerate(image_summaries)
-# ]
-# retriever.vectorstore.add_documents(summary_img)
-# retriever.docstore.mset(list(zip(img_ids, images)))
-
-docs = retriever.invoke(
-    "who are the authors of the paper?"
-)
