@@ -146,7 +146,7 @@ def create_vector_store(documents, persist_directory="dbv2/chroma_db"):
     vectorstore = Chroma.from_documents( 
         documents=documents, 
         embedding=embedding_model, 
-        persist_directory=persist_directory, 
+        persist_directory=persist_directory,
         collection_metadata={"hnsw:space": "cosine"} 
     ) 
     print("Vector store created.") 
@@ -269,4 +269,4 @@ def rag_model(report):
  
 if __name__ == "__main__": 
     print("Starting ESG RAG pipeline...") 
-    rag_model("drive:1WoKxRCPNVIdLQfzmITZFnSqyVTJCybkr") 
+    rag_model("drive:1WoKxRCPNVIdLQfzmITZFnSqyVTJCybkr")
