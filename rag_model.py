@@ -248,4 +248,4 @@ def rag_model(report):
         for line in file:
             if line.strip():
                 print(query_and_answer_generation(db, line.strip()))
-rag_model("./inputs/report0.pdf")
+rag_model("./inputs/report.pdf")
